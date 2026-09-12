@@ -1,0 +1,4 @@
+config.py
+
+*.md
+!README.md

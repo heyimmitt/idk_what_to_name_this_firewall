@@ -1,53 +1,13 @@
 import socket
 
-HOST = "127.0.0.1"
-PORT = 8080
+from config import HOST, PORT
+from proxy.http_parser import parse_request
+from rules.stateless_rules import check_rules
 
-# parser — reads raw bytes, extracts src/dst IP, port, protocol
-def parse_request(data):
-    text = data.decode(errors="replace")  # bytes -> string; be tolerant of odd bytes
-    lines = text.split("\r\n")
-
-    """
-    A request looks like:
-    GET /index.html HTTP/1.1\r\n
-    Host: example.com\r\n
-    User-Agent: curl/8.1.2\r\n
-    \r\n
-    """
-
-    request_line = lines[0]              # e.g. "GET /index.html HTTP/1.1"
-    method, path, version = request_line.split(" ")
-
-    headers = {}
-    for line in lines[1:]:
-        if line == "":       # blank line marks end of headers
-            break
-        name, value = line.split(": ", 1)
-        headers[name] = value
-
-    return method, path, version, headers
-
-
-BLOCKED_DOMAINS = {"badsite.com"}
-BLOCKED_IPS = {"6.6.6.6"}
-
-# stateless rule checking engine
-def check_rules(client_ip, headers):
-    if client_ip in BLOCKED_IPS:
-        return "BLOCK", f"client IP {client_ip} is blocklisted"
-
-    host = headers.get("Host", "")
-    domain = host.split(":")[0]  # strip port, e.g "badsite.com:8080" -> "badsite.com"
-    if domain in BLOCKED_DOMAINS:
-        return "BLOCK", f"domain {domain} is blocklisted"
-
-    return "ALLOW", "no matching rule"
-
-# connection intercepter 
-def main():
+# connection intercepter
+def run():
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM) # create socket using ipv4 and tcp
-    server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1) # lets you reuse the same 
+    server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1) # lets you reuse the same
     # address so you can restart without hitting the address already in use
 
     server_socket.bind((HOST, PORT)) # reserves the address 127.0.0.1:8080 as this socket's address
@@ -87,6 +47,3 @@ def main():
         client_socket.sendall(response)
 
         client_socket.close()
-
-if __name__ == "__main__":
-    main()
