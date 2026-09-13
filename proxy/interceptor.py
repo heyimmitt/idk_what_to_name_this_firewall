@@ -2,6 +2,7 @@ import socket
 
 from config import HOST, PORT
 from proxy.http_parser import parse_request
+from proxy.forwarder import forward_request
 from rules.stateless_rules import check_rules
 
 # connection intercepter
@@ -34,16 +35,17 @@ def run():
 
         if verdict == "BLOCK":
             body = f"403 Forbidden: {reason}\n".encode()
-            status_line = b"HTTP/1.1 403 Forbidden\r\n"
+            response = (
+                b"HTTP/1.1 403 Forbidden\r\n"
+                b"Content-Length: " + str(len(body)).encode() + b"\r\n"
+                b"\r\n" + body
+            )
         else:
-            body = b"Hello from the firewall proxy!\n"
-            status_line = b"HTTP/1.1 200 OK\r\n"
+            response = forward_request(headers, data)
 
-        response = (
-            status_line +
-            b"Content-Length: " + str(len(body)).encode() + b"\r\n"
-            b"\r\n" + body
-        )
+        print("Response:")
+        print(response)
+
         client_socket.sendall(response)
 
         client_socket.close()

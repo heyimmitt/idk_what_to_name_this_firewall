@@ -2,3 +2,6 @@ config.py
 
 *.md
 !README.md
+
+__pycache__
+*.pyc
