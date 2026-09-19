@@ -10,10 +10,19 @@ from rules.stateless_rules import check_rules
 # handles everything for ONE client connection (runs in its own thread)
 def handle_client(client_socket, client_addr):
     data = client_socket.recv(4096) # reads upto 4096 bytes from the client socket
+    if not data:   # browsers open speculative connections that never send anything
+        client_socket.close()
+        return
+
     print("Received:")
     print(data)
 
-    method, path, version, headers = parse_request(data)
+    try:
+        method, path, version, headers = parse_request(data)
+    except ValueError:   # malformed request line or header
+        client_socket.sendall(b"HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\n\r\n")
+        client_socket.close()
+        return
     print(f"Parsed: method={method} path={path} version={version}")
     print(f"Headers: {headers}")
 
