@@ -1,0 +1,23 @@
+# one domain per line; subdomains are blocked automatically
+# also accepts hosts-file lines like "0.0.0.0 example.com" (public blocklists use this format)
+
+# demo domains for testing
+badsite.com
+malware-test.net
+phishy-login.org
+
+# ad networks and trackers
+doubleclick.net
+googlesyndication.com
+googleadservices.com
+adnxs.com
+taboola.com
+outbrain.com
+criteo.com
+scorecardresearch.com
+quantserve.com
+hotjar.com
+adsrvr.org
+
+# antivirus test file host (harmless, used to test AV/firewalls)
+eicar.org

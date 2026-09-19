@@ -1,0 +1,5 @@
+{
+  "blocked_ips": ["6.6.6.6", "10.10.10.10"],
+  "blocked_domains": ["badsite.com", "malware-test.net", "phishy-login.org"],
+  "allowed_ports": [80, 443, 8080]
+}
