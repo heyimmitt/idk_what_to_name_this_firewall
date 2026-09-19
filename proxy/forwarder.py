@@ -19,8 +19,8 @@ def forward_request(headers, data):
 
     data = force_connection_close(data)
 
-    dest_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    dest_socket.connect((dest_host, dest_port))
+    # tries every address the host resolves to (IPv4 and IPv6); gives up after 10s
+    dest_socket = socket.create_connection((dest_host, dest_port), timeout=10)
     dest_socket.sendall(data)
 
     response = b""

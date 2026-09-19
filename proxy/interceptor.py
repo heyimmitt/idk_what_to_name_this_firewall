@@ -1,9 +1,54 @@
 import socket
+import threading
 
 from config import HOST, PORT
 from proxy.http_parser import parse_request
 from proxy.forwarder import forward_request
+from proxy.connect_handler import tunnel
 from rules.stateless_rules import check_rules
+
+# handles everything for ONE client connection (runs in its own thread)
+def handle_client(client_socket, client_addr):
+    data = client_socket.recv(4096) # reads upto 4096 bytes from the client socket
+    print("Received:")
+    print(data)
+
+    method, path, version, headers = parse_request(data)
+    print(f"Parsed: method={method} path={path} version={version}")
+    print(f"Headers: {headers}")
+
+    verdict, reason = check_rules(client_addr[0], headers)
+    print(f"Verdict: {verdict} ({reason})")
+
+    if verdict == "ALLOW" and method == "CONNECT":
+        tunnel(client_socket, path)   # for CONNECT, "path" is "host:port"
+        client_socket.close()
+        return
+
+    if verdict == "BLOCK":
+        body = f"403 Forbidden: {reason}\n".encode()
+        response = (
+            b"HTTP/1.1 403 Forbidden\r\n"
+            b"Content-Length: " + str(len(body)).encode() + b"\r\n"
+            b"\r\n" + body
+        )
+    else:
+        try:
+            response = forward_request(headers, data)
+        except OSError as e:  # DNS failure, timeout, connection refused...
+            body = f"502 Bad Gateway: could not reach destination ({e})\n".encode()
+            response = (
+                b"HTTP/1.1 502 Bad Gateway\r\n"
+                b"Content-Length: " + str(len(body)).encode() + b"\r\n"
+                b"\r\n" + body
+            )
+
+    print("Response:")
+    print(response)
+
+    client_socket.sendall(response)
+
+    client_socket.close()
 
 # connection intercepter
 def run():
@@ -22,30 +67,5 @@ def run():
         # (separate from server_socket, which keeps listening for others), and client_addr, a tuple like ('127.0.0.1', 54321)
         # — the client's IP and the ephemeral port it connected from.
 
-        data = client_socket.recv(4096) # reads upto 4096 bytes from the client socket
-        print("Received:")
-        print(data)
-
-        method, path, version, headers = parse_request(data)
-        print(f"Parsed: method={method} path={path} version={version}")
-        print(f"Headers: {headers}")
-
-        verdict, reason = check_rules(client_addr[0], headers)
-        print(f"Verdict: {verdict} ({reason})")
-
-        if verdict == "BLOCK":
-            body = f"403 Forbidden: {reason}\n".encode()
-            response = (
-                b"HTTP/1.1 403 Forbidden\r\n"
-                b"Content-Length: " + str(len(body)).encode() + b"\r\n"
-                b"\r\n" + body
-            )
-        else:
-            response = forward_request(headers, data)
-
-        print("Response:")
-        print(response)
-
-        client_socket.sendall(response)
-
-        client_socket.close()
+        # hand this client to its own thread so the loop can immediately accept the next one
+        threading.Thread(target=handle_client, args=(client_socket, client_addr), daemon=True).start()
