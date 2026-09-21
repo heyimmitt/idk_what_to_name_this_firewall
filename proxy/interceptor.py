@@ -5,7 +5,8 @@ from config import HOST, PORT
 from proxy.http_parser import parse_request
 from proxy.forwarder import forward_request
 from proxy.connect_handler import tunnel
-from rules.stateless_rules import check_rules
+from rules.stateless_rules import check_rules, split_host_port
+from inspection.content_inspector import check_content
 from state.connection_tracker import register_connection, release_connection, cleanup_loop
 
 # handles everything for ONE client connection (runs in its own thread)
@@ -54,6 +55,13 @@ def handle_allowed_client(client_socket, client_addr):
         tunnel(client_socket, path)   # for CONNECT, "path" is "host:port"
         client_socket.close()
         return
+
+    if verdict == "ALLOW":
+        domain, _ = split_host_port(headers.get("Host", ""))
+        verdict, reason = check_content(domain, path)
+        print(f"Content inspection: {verdict} ({reason})")
+        if verdict == "BLOCK":
+            print(f"ALERT: suspicious request from {client_addr[0]} - {reason}")
 
     if verdict == "BLOCK":
         body = f"403 Forbidden: {reason}\n".encode()

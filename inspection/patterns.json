@@ -1,0 +1,9 @@
+{
+  "url_shorteners": ["bit.ly", "tinyurl.com", "t.co", "goo.gl", "ow.ly", "is.gd", "buff.ly", "rebrand.ly"],
+  "phishing_keywords": [
+    "verify-account", "verify-your-account", "login-secure", "secure-login",
+    "update-payment", "update-billing", "confirm-identity", "account-suspended",
+    "account-locked", "urgent-action", "reset-password-now", "claim-your-prize"
+  ],
+  "suspicious_extensions": [".exe", ".scr", ".bat", ".vbs"]
+}
