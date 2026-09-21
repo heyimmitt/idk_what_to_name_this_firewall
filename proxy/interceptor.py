@@ -6,9 +6,30 @@ from proxy.http_parser import parse_request
 from proxy.forwarder import forward_request
 from proxy.connect_handler import tunnel
 from rules.stateless_rules import check_rules
+from state.connection_tracker import register_connection, release_connection
 
 # handles everything for ONE client connection (runs in its own thread)
 def handle_client(client_socket, client_addr):
+    client_ip = client_addr[0]
+
+    allowed, reason = register_connection(client_ip)
+    if not allowed:
+        print(f"Connection tracker: BLOCK ({reason})")
+        body = f"429 Too Many Requests: {reason}\n".encode()
+        client_socket.sendall(
+            b"HTTP/1.1 429 Too Many Requests\r\n"
+            b"Content-Length: " + str(len(body)).encode() + b"\r\n"
+            b"\r\n" + body
+        )
+        client_socket.close()
+        return
+
+    try:
+        handle_allowed_client(client_socket, client_addr)
+    finally:
+        release_connection(client_ip)   # always runs, so the count never leaks
+
+def handle_allowed_client(client_socket, client_addr):
     data = client_socket.recv(4096) # reads upto 4096 bytes from the client socket
     if not data:   # browsers open speculative connections that never send anything
         client_socket.close()
