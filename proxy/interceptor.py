@@ -6,7 +6,7 @@ from proxy.http_parser import parse_request
 from proxy.forwarder import forward_request
 from proxy.connect_handler import tunnel
 from rules.stateless_rules import check_rules
-from state.connection_tracker import register_connection, release_connection
+from state.connection_tracker import register_connection, release_connection, cleanup_loop
 
 # handles everything for ONE client connection (runs in its own thread)
 def handle_client(client_socket, client_addr):
@@ -89,6 +89,8 @@ def run():
     server_socket.bind((HOST, PORT)) # reserves the address 127.0.0.1:8080 as this socket's address
     server_socket.listen() # aceepts incoming connection attempts into a queue, without handing them to the code
     print(f"Listening on {HOST}:{PORT}...")
+
+    threading.Thread(target=cleanup_loop, daemon=True).start()  # periodic stale-entry sweep
 
     while True:
         client_socket, client_addr = server_socket.accept() # program pauses here until a client actually connects

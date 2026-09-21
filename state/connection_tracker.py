@@ -6,6 +6,8 @@ MAX_NEW_CONNECTIONS_PER_WINDOW = 30   # how many NEW connections one client can 
 RATE_WINDOW_SECONDS = 10              # ...within this many seconds
 # arbitrarily picked, change as per tuning with real traffic data
 
+CLEANUP_INTERVAL_SECONDS = 30  # how often to sweep out IPs with no recent activity
+
 lock = threading.Lock()   # guards the two dicts below, since threads share them
 active_connections = {}      # client_ip -> count of connections currently open
 connection_timestamps = {}   # client_ip -> list of times a new connection was accepted
@@ -34,3 +36,22 @@ def release_connection(client_ip):
             active_connections[client_ip] -= 1
             if active_connections[client_ip] <= 0:
                 del active_connections[client_ip]
+
+# drops any IP whose timestamps are all older than the rate window — i.e. it hasn't
+# opened a connection recently, so there's nothing left worth remembering about it
+def sweep_stale_entries():
+    now = time.time()
+    with lock:
+        stale_ips = [
+            ip for ip, timestamps in connection_timestamps.items()
+            if all(now - t >= RATE_WINDOW_SECONDS for t in timestamps)
+        ]
+        for ip in stale_ips:
+            del connection_timestamps[ip]
+    return len(stale_ips)
+
+# runs forever in a background thread, sweeping on a timer
+def cleanup_loop():
+    while True:
+        time.sleep(CLEANUP_INTERVAL_SECONDS)
+        sweep_stale_entries()
