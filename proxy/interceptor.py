@@ -40,7 +40,7 @@ def handle_allowed_client(client_socket, client_addr):
     print(data)
 
     try:
-        method, path, version, headers = parse_request(data)
+        method, path, version, headers, req_body = parse_request(data)
     except ValueError:   # malformed request line or header
         client_socket.sendall(b"HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\n\r\n")
         client_socket.close()
@@ -58,7 +58,7 @@ def handle_allowed_client(client_socket, client_addr):
 
     if verdict == "ALLOW":
         domain, _ = split_host_port(headers.get("Host", ""))
-        verdict, reason = check_content(domain, path)
+        verdict, reason = check_content(domain, path, req_body)
         print(f"Content inspection: {verdict} ({reason})")
         if verdict == "BLOCK":
             print(f"ALERT: suspicious request from {client_addr[0]} - {reason}")

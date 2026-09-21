@@ -1,8 +1,13 @@
 from urllib.parse import urlsplit
 
-# parser — reads raw bytes, extracts request line + headers
+# parser — reads raw bytes, extracts request line + headers + body
 def parse_request(data):
-    text = data.decode(errors="replace")  # bytes -> string; be tolerant of odd bytes
+    # split on the blank-line boundary in the raw bytes first, so a body containing
+    # arbitrary bytes doesn't get mangled by decoding/splitting it as text too early
+    head_bytes, _, body_bytes = data.partition(b"\r\n\r\n")
+    body = body_bytes.decode(errors="replace")
+
+    text = head_bytes.decode(errors="replace")  # bytes -> string; be tolerant of odd bytes
     lines = text.split("\r\n")
 
     """
@@ -35,4 +40,4 @@ def parse_request(data):
         if url.query:
             path += "?" + url.query
 
-    return method, path, version, headers
+    return method, path, version, headers, body
