@@ -1,5 +1,6 @@
 import socket
 import threading
+import traceback
 
 from config import HOST, PORT
 from proxy.http_parser import parse_request
@@ -48,38 +49,50 @@ def handle_allowed_client(client_socket, client_addr):
     print(f"Parsed: method={method} path={path} version={version}")
     print(f"Headers: {headers}")
 
-    verdict, reason = check_rules(client_addr[0], headers)
-    print(f"Verdict: {verdict} ({reason})")
+    # catch-all: anything unexpected below still gets a real HTTP response instead
+    # of silently killing the thread and leaving the client with nothing (which
+    # browsers show as "did not send any data" / ERR_EMPTY_RESPONSE)
+    try:
+        verdict, reason = check_rules(client_addr[0], headers)
+        print(f"Verdict: {verdict} ({reason})")
 
-    if verdict == "ALLOW" and method == "CONNECT":
-        tunnel(client_socket, path)   # for CONNECT, "path" is "host:port"
-        client_socket.close()
-        return
+        if verdict == "ALLOW" and method == "CONNECT":
+            tunnel(client_socket, path)   # for CONNECT, "path" is "host:port"
+            client_socket.close()
+            return
 
-    if verdict == "ALLOW":
-        domain, _ = split_host_port(headers.get("Host", ""))
-        verdict, reason = check_content(domain, path, req_body)
-        print(f"Content inspection: {verdict} ({reason})")
+        if verdict == "ALLOW":
+            domain, _ = split_host_port(headers.get("Host", ""))
+            verdict, reason = check_content(domain, path, req_body)
+            print(f"Content inspection: {verdict} ({reason})")
+            if verdict == "BLOCK":
+                print(f"ALERT: suspicious request from {client_addr[0]} - {reason}")
+
         if verdict == "BLOCK":
-            print(f"ALERT: suspicious request from {client_addr[0]} - {reason}")
-
-    if verdict == "BLOCK":
-        body = f"403 Forbidden: {reason}\n".encode()
-        response = (
-            b"HTTP/1.1 403 Forbidden\r\n"
-            b"Content-Length: " + str(len(body)).encode() + b"\r\n"
-            b"\r\n" + body
-        )
-    else:
-        try:
-            response = forward_request(headers, data)
-        except OSError as e:  # DNS failure, timeout, connection refused...
-            body = f"502 Bad Gateway: could not reach destination ({e})\n".encode()
+            body = f"403 Forbidden: {reason}\n".encode()
             response = (
-                b"HTTP/1.1 502 Bad Gateway\r\n"
+                b"HTTP/1.1 403 Forbidden\r\n"
                 b"Content-Length: " + str(len(body)).encode() + b"\r\n"
                 b"\r\n" + body
             )
+        else:
+            try:
+                response = forward_request(headers, data)
+            except OSError as e:  # DNS failure, timeout, connection refused...
+                body = f"502 Bad Gateway: could not reach destination ({e})\n".encode()
+                response = (
+                    b"HTTP/1.1 502 Bad Gateway\r\n"
+                    b"Content-Length: " + str(len(body)).encode() + b"\r\n"
+                    b"\r\n" + body
+                )
+    except Exception:
+        traceback.print_exc()   # prints the real error + line number to the server terminal
+        body = b"500 Internal Server Error\n"
+        response = (
+            b"HTTP/1.1 500 Internal Server Error\r\n"
+            b"Content-Length: " + str(len(body)).encode() + b"\r\n"
+            b"\r\n" + body
+        )
 
     print("Response:")
     print(response)

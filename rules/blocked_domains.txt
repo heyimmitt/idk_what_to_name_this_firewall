@@ -21,3 +21,33 @@ adsrvr.org
 
 # antivirus test file host (harmless, used to test AV/firewalls)
 eicar.org
+
+# more ad/tracker networks
+adform.net
+pubmatic.com
+rubiconproject.com
+casalemedia.com
+mopub.com
+appsflyer.com
+branch.io
+segment.io
+mixpanel.com
+
+# known malware/phishing test & research domains (safe, used by security tools)
+testsafebrowsing.appspot.com
+malware.testing.google.test
+phish.testing.google.test
+wicar.org
+
+# example "known bad" domains for demo purposes
+totally-not-a-virus.com
+free-robux-generator.com
+claim-your-prize-now.net
+paypal-security-alert.com
+
+# social media and otber stuff
+instagram.com
+youtube.com
+chatgpt.com
+claude.com
+google.gemini.com

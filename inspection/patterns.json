@@ -1,9 +1,26 @@
 {
-  "url_shorteners": ["bit.ly", "tinyurl.com", "t.co", "goo.gl", "ow.ly", "is.gd", "buff.ly", "rebrand.ly"],
+  "url_shorteners": [
+    "bit.ly", "tinyurl.com", "t.co", "goo.gl", "ow.ly", "is.gd", "buff.ly", "rebrand.ly",
+    "cutt.ly", "shorturl.at", "tiny.cc", "rb.gy", "shorte.st", "soo.gd"
+  ],
   "phishing_keywords": [
     "verify-account", "verify-your-account", "login-secure", "secure-login",
     "update-payment", "update-billing", "confirm-identity", "account-suspended",
-    "account-locked", "urgent-action", "reset-password-now", "claim-your-prize"
+    "account-locked", "urgent-action", "reset-password-now", "claim-your-prize",
+    "free-gift-card", "you-have-won", "confirm-your-details", "unusual-activity",
+    "click-here-now", "limited-time-offer", "act-now", "wire-transfer-request"
   ],
-  "suspicious_extensions": [".exe", ".scr", ".bat", ".vbs"]
+  "suspicious_extensions": [".exe", ".scr", ".bat", ".vbs", ".jar", ".msi", ".cmd"],
+  "brand_names": [
+    "paypal", "amazon", "apple", "microsoft", "netflix", "facebook", "instagram",
+    "google", "chase", "wellsfargo", "bankofamerica", "irs", "usps", "fedex"
+  ],
+  "suspicious_domain_words": ["secure", "verify", "login", "account", "update", "confirm", "security", "alert", "signin"],
+  "real_brand_domains": [
+    "paypal.com", "amazon.com", "apple.com", "microsoft.com", "netflix.com",
+    "facebook.com", "instagram.com", "google.com", "chase.com", "wellsfargo.com",
+    "bankofamerica.com", "irs.gov", "usps.com", "fedex.com"
+  ],
+  "suspicious_tlds": [".xyz", ".top", ".click", ".loan", ".win", ".gq", ".tk", ".rest"],
+  "max_hyphens": 3
 }

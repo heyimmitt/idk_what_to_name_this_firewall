@@ -10,6 +10,11 @@ with open(PATTERNS_PATH) as f:
 URL_SHORTENERS = set(patterns["url_shorteners"])
 PHISHING_KEYWORDS = patterns["phishing_keywords"]
 SUSPICIOUS_EXTENSIONS = patterns["suspicious_extensions"]
+BRAND_NAMES = patterns["brand_names"]
+SUSPICIOUS_DOMAIN_WORDS = patterns["suspicious_domain_words"]
+REAL_BRAND_DOMAINS = set(patterns["real_brand_domains"])
+SUSPICIOUS_TLDS = patterns["suspicious_tlds"]
+MAX_HYPHENS = patterns["max_hyphens"]
 
 SCORE_THRESHOLD = 3   # score >= this -> BLOCK
 
@@ -34,6 +39,35 @@ def inspect_request(domain, path, body=""):
     if domain in URL_SHORTENERS:
         score += 3
         reasons.append(f"{domain} is a known URL shortener")
+
+    # 2b. brand impersonation: domain mentions a real brand name AND a suspicious
+    # word (e.g. "paypal-secure-login.net"), but isn't actually that brand's real
+    # domain (or a subdomain of it) — catches lookalikes we've never seen before,
+    # instead of needing every fake domain listed individually
+    is_real_brand_domain = domain in REAL_BRAND_DOMAINS or any(
+        domain.endswith("." + real) for real in REAL_BRAND_DOMAINS
+    )
+    if not is_real_brand_domain:
+        mentioned_brand = next((b for b in BRAND_NAMES if b in domain), None)
+        mentioned_word = next((w for w in SUSPICIOUS_DOMAIN_WORDS if w in domain), None)
+        if mentioned_brand and mentioned_word:
+            score += 3
+            reasons.append(
+                f"domain '{domain}' mentions brand '{mentioned_brand}' with suspicious "
+                f"word '{mentioned_word}' but isn't {mentioned_brand}'s real domain"
+            )
+
+    # 2c. excessive hyphens — legitimate business domains rarely have many, scam
+    # domains often do ("amazon-account-verify-update-now.com")
+    if domain.count("-") > MAX_HYPHENS:
+        score += 2
+        reasons.append(f"domain '{domain}' has an unusually high number of hyphens ({domain.count('-')})")
+
+    # 2d. suspicious TLD — weak signal alone (legitimate sites use these too), so it
+    # only contributes a small amount and needs another signal to actually block
+    if any(domain.endswith(tld) for tld in SUSPICIOUS_TLDS):
+        score += 1
+        reasons.append(f"domain '{domain}' uses a commonly-abused TLD")
 
     # 3. phishing-style keyword combos in the path/query
     for keyword in PHISHING_KEYWORDS:
