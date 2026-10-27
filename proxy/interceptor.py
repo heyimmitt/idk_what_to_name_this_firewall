@@ -53,7 +53,7 @@ def handle_allowed_client(client_socket, client_addr):
     # normalize the destination ONCE; every stage below uses this same (host, port)
     # instead of re-parsing the Host header its own way
     try:
-        dest_host, dest_port = normalize_host(headers.get("Host", ""), 80)
+        dest_host, dest_port = normalize_host(headers.get("host", ""), 80)
     except ValueError as e:   # missing Host, bad port, etc. -- refuse, don't guess
         body = f"400 Bad Request: {e}\n".encode()
         client_socket.sendall(

@@ -21,21 +21,36 @@ def parse_request(data):
     request_line = lines[0]              # e.g. "GET /index.html HTTP/1.1"
     method, path, version = request_line.split(" ")
 
+    # header names are case-insensitive in HTTP ("Host" == "host" == "HOST"), so
+    # store them all lowercased and always look them up lowercased too
     headers = {}
     for line in lines[1:]:
         if line == "":       # blank line marks end of headers
             break
-        name, value = line.split(": ", 1)
-        headers[name] = value
+        name, sep, value = line.partition(":")   # the space after ":" is optional
+        if not sep or name == "" or name != name.strip():
+            # no colon, empty name, or whitespace around the name ("Host : x") --
+            # the HTTP spec says to reject these, since servers disagree on them
+            raise ValueError(f"malformed header line {line!r}")
+        name = name.lower()
+        value = value.strip()
+
+        if name in headers:
+            if name in ("host", "content-length"):
+                # two of these means the firewall might check one while the
+                # destination uses the other, so refuse instead of picking one
+                raise ValueError(f"duplicate {name} header")
+            headers[name] += ", " + value   # standard way to merge repeated headers
+        else:
+            headers[name] = value
 
     # absolute-form (browser -> proxy): "GET http://site.com/a?b=1 HTTP/1.1"
-    # convert to origin-form: path becomes "/a?b=1" and the site goes into Host
-    if path.startswith("http://"):
+    # convert to origin-form: path becomes "/a?b=1" and the site goes into host
+    if path.lower().startswith("http://"):   # URL schemes are case-insensitive
         url = urlsplit(path)
-        host = url.hostname
-        if url.port:
-            host = f"{host}:{url.port}"
-        headers["Host"] = host
+        # netloc is the raw "host:port" text (possibly with "user:pass@" in front);
+        # pass it on as-is and let normalize_host do all the interpreting
+        headers["host"] = url.netloc.rpartition("@")[2]
         path = url.path or "/"
         if url.query:
             path += "?" + url.query
