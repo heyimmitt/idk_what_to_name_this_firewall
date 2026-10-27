@@ -1,14 +1,39 @@
 import ipaddress
 import json
 import os
-from urllib.parse import unquote
+import re
+import unicodedata
+from urllib.parse import unquote_plus
 
 PATTERNS_PATH = os.path.join(os.path.dirname(__file__), "patterns.json")
 with open(PATTERNS_PATH) as f:
     patterns = json.load(f)
 
+# --- normalization: get text into ONE standard form before matching anything ---
+
+MAX_DECODE_ROUNDS = 5
+SEPARATORS_RE = re.compile(r"[\s\-_./+]+")   # any run of these counts as one separator
+
+# the real text the server will end up seeing
+def decode_fully(text):
+    # decode repeatedly: "%252D" -> "%2D" -> "-". Decoding once (like before) let
+    # double-encoded keywords through, since the server decodes again after us
+    for _ in range(MAX_DECODE_ROUNDS):
+        decoded = unquote_plus(text)   # "_plus": "+" means space in forms/query strings
+        if decoded == text:
+            break
+        text = decoded
+    # NFKC turns unicode lookalikes into plain characters ("ｖｅｒｉｆｙ" -> "verify")
+    return unicodedata.normalize("NFKC", text).lower()
+
+# decoded text with every run of separators squashed to a single "-", so
+# "verify_account", "verify account", "verify.account" all become "verify-account"
+def flatten(text):
+    return SEPARATORS_RE.sub("-", text)
+
 URL_SHORTENERS = set(patterns["url_shorteners"])
-PHISHING_KEYWORDS = patterns["phishing_keywords"]
+# flattened the same way as the traffic, so the two always compare like-for-like
+PHISHING_KEYWORDS = [flatten(decode_fully(k)) for k in patterns["phishing_keywords"]]
 SUSPICIOUS_EXTENSIONS = patterns["suspicious_extensions"]
 BRAND_NAMES = patterns["brand_names"]
 SUSPICIOUS_DOMAIN_WORDS = patterns["suspicious_domain_words"]
@@ -31,10 +56,14 @@ def is_ip_literal(domain):
 def inspect_request(domain, path, body=""):
     score = 0
     reasons = []
-    # unquote() reverses URL-encoding first, e.g. "verify%2Daccount" -> "verify-account",
-    # so encoding a keyword can't be used to sneak past the keyword check below
-    path_lower = unquote(path).lower()
-    body_lower = unquote(body).lower()
+    # two views of each: "decoded" keeps real "." and "/" (for file extensions and
+    # attack signatures), "flat" squashes separators (for keyword matching)
+    path_decoded = decode_fully(path)
+    body_decoded = decode_fully(body)
+    path_flat = flatten(path_decoded)
+    body_flat = flatten(body_decoded)
+    # path without the "?query" part, so "/setup.exe?x=1" still ends in ".exe"
+    path_only = path_decoded.split("?", 1)[0]
 
     # 1. destination is a raw IP address instead of a domain name — a classic way
     #    to dodge domain blocklists, and unusual for a legitimate everyday site
@@ -78,20 +107,20 @@ def inspect_request(domain, path, body=""):
 
     # 3. phishing-style keyword combos in the path/query
     for keyword in PHISHING_KEYWORDS:
-        if keyword in path_lower:
+        if keyword in path_flat:
             score += 3
             reasons.append(f"path contains phishing-like keyword '{keyword}'")
 
     # 3b. same keywords, but in the request BODY (e.g. a submitted form) — this is
     # actual payload content, not just the URL, which is what "content inspection" means
     for keyword in PHISHING_KEYWORDS:
-        if keyword in body_lower:
+        if keyword in body_flat:
             score += 3
             reasons.append(f"request body contains phishing-like keyword '{keyword}'")
 
     # 4. suspicious file extension being requested
     for ext in SUSPICIOUS_EXTENSIONS:
-        if path_lower.endswith(ext):
+        if path_only.endswith(ext):
             score += 3
             reasons.append(f"path requests a suspicious file type ({ext})")
 
