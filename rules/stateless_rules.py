@@ -33,21 +33,16 @@ def domain_is_blocked(domain):
     labels = domain.split(".")
     return any(".".join(labels[i:]) in BLOCKED_DOMAINS for i in range(len(labels)))
 
-# "Example.com:8080" -> ("example.com", 8080); no port given means the HTTP default, 80
-def split_host_port(host_header):
-    domain, _, port = host_header.partition(":")
-    return domain.lower(), int(port) if port.isdigit() else 80
-
-# stateless rule checking engine
-def check_rules(client_ip, headers):
+# stateless rule checking engine. dest_host/dest_port must already be normalized
+# (see proxy/address.py), so this only compares, it never parses
+def check_rules(client_ip, dest_host, dest_port):
     if client_ip in BLOCKED_IPS:
         return "BLOCK", f"client IP {client_ip} is blocklisted"
 
-    domain, port = split_host_port(headers.get("Host", ""))
-    if port not in ALLOWED_PORTS:
-        return "BLOCK", f"destination port {port} is not allowed"
+    if dest_port not in ALLOWED_PORTS:
+        return "BLOCK", f"destination port {dest_port} is not allowed"
 
-    if domain_is_blocked(domain):
-        return "BLOCK", f"domain {domain} is blocklisted"
+    if domain_is_blocked(dest_host):
+        return "BLOCK", f"domain {dest_host} is blocklisted"
 
     return "ALLOW", "no matching rule"

@@ -11,12 +11,7 @@ def force_connection_close(data):
 
 # opens a connection to the real destination, forwards the original request,
 # and returns whatever response comes back
-def forward_request(headers, data):
-    host_header = headers.get("Host", "")
-    parts = host_header.split(":")
-    dest_host = parts[0]
-    dest_port = int(parts[1]) if len(parts) > 1 else 80
-
+def forward_request(dest_host, dest_port, data):
     data = force_connection_close(data)
 
     # tries every address the host resolves to (IPv4 and IPv6); gives up after 10s

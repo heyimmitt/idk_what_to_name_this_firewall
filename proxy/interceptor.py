@@ -4,9 +4,10 @@ import traceback
 
 from config import HOST, PORT
 from proxy.http_parser import parse_request
+from proxy.address import normalize_host
 from proxy.forwarder import forward_request
 from proxy.connect_handler import tunnel
-from rules.stateless_rules import check_rules, split_host_port
+from rules.stateless_rules import check_rules
 from inspection.content_inspector import check_content
 from state.connection_tracker import register_connection, release_connection, cleanup_loop
 
@@ -49,21 +50,38 @@ def handle_allowed_client(client_socket, client_addr):
     print(f"Parsed: method={method} path={path} version={version}")
     print(f"Headers: {headers}")
 
+    # normalize the destination ONCE; every stage below uses this same (host, port)
+    # instead of re-parsing the Host header its own way
+    try:
+        dest_host, dest_port = normalize_host(headers.get("Host", ""), 80)
+    except ValueError as e:   # missing Host, bad port, etc. -- refuse, don't guess
+        body = f"400 Bad Request: {e}\n".encode()
+        client_socket.sendall(
+            b"HTTP/1.1 400 Bad Request\r\n"
+            b"Content-Length: " + str(len(body)).encode() + b"\r\n"
+            b"\r\n" + body
+        )
+        client_socket.close()
+        return
+    print(f"Destination: {dest_host}:{dest_port}")
+
     # catch-all: anything unexpected below still gets a real HTTP response instead
     # of silently killing the thread and leaving the client with nothing (which
     # browsers show as "did not send any data" / ERR_EMPTY_RESPONSE)
     try:
-        verdict, reason = check_rules(client_addr[0], headers)
+        verdict, reason = check_rules(client_addr[0], dest_host, dest_port)
         print(f"Verdict: {verdict} ({reason})")
 
         if verdict == "ALLOW" and method == "CONNECT":
-            tunnel(client_socket, path)   # for CONNECT, "path" is "host:port"
+            # BUG #1, still here on purpose: rules above checked the Host header,
+            # but we connect to the CONNECT target ("path" is "host:port") -- step 2
+            tunnel_host, tunnel_port = normalize_host(path, 443)
+            tunnel(client_socket, tunnel_host, tunnel_port)
             client_socket.close()
             return
 
         if verdict == "ALLOW":
-            domain, _ = split_host_port(headers.get("Host", ""))
-            verdict, reason = check_content(domain, path, req_body)
+            verdict, reason = check_content(dest_host, path, req_body)
             print(f"Content inspection: {verdict} ({reason})")
             if verdict == "BLOCK":
                 print(f"ALERT: suspicious request from {client_addr[0]} - {reason}")
@@ -77,7 +95,7 @@ def handle_allowed_client(client_socket, client_addr):
             )
         else:
             try:
-                response = forward_request(headers, data)
+                response = forward_request(dest_host, dest_port, data)
             except OSError as e:  # DNS failure, timeout, connection refused...
                 body = f"502 Bad Gateway: could not reach destination ({e})\n".encode()
                 response = (
