@@ -50,10 +50,15 @@ def handle_allowed_client(client_socket, client_addr):
     print(f"Parsed: method={method} path={path} version={version}")
     print(f"Headers: {headers}")
 
-    # normalize the destination ONCE; every stage below uses this same (host, port)
-    # instead of re-parsing the Host header its own way
+    # pick where this request is ACTUALLY going, normalize it ONCE, and use that same
+    # (host, port) for both the checks and the connection -- if the checks read one
+    # value and the connection used another, a client could lie in one of them
+    if method == "CONNECT":
+        target, default_port = path, 443   # "CONNECT host:port" -- Host header is ignored
+    else:
+        target, default_port = headers.get("host", ""), 80   # parser put absolute-URL host here
     try:
-        dest_host, dest_port = normalize_host(headers.get("host", ""), 80)
+        dest_host, dest_port = normalize_host(target, default_port)
     except ValueError as e:   # missing Host, bad port, etc. -- refuse, don't guess
         body = f"400 Bad Request: {e}\n".encode()
         client_socket.sendall(
@@ -73,10 +78,7 @@ def handle_allowed_client(client_socket, client_addr):
         print(f"Verdict: {verdict} ({reason})")
 
         if verdict == "ALLOW" and method == "CONNECT":
-            # BUG #1, still here on purpose: rules above checked the Host header,
-            # but we connect to the CONNECT target ("path" is "host:port") -- step 2
-            tunnel_host, tunnel_port = normalize_host(path, 443)
-            tunnel(client_socket, tunnel_host, tunnel_port)
+            tunnel(client_socket, dest_host, dest_port)   # same host:port the rules checked
             client_socket.close()
             return
 
