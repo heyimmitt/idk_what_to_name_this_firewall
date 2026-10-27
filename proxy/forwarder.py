@@ -1,4 +1,4 @@
-import socket
+from proxy.address import connect_to
 
 # rewrites/adds a "Connection: close" header so the destination closes the
 # connection after replying — lets us reliably read the full response by
@@ -11,11 +11,11 @@ def force_connection_close(data):
 
 # opens a connection to the real destination, forwards the original request,
 # and returns whatever response comes back
-def forward_request(dest_host, dest_port, data):
+def forward_request(dest_ips, dest_port, data):
     data = force_connection_close(data)
 
-    # tries every address the host resolves to (IPv4 and IPv6); gives up after 10s
-    dest_socket = socket.create_connection((dest_host, dest_port), timeout=10)
+    # tries each already-checked IP in turn; gives up on each after 10s
+    dest_socket = connect_to(dest_ips, dest_port)
     dest_socket.sendall(data)
 
     response = b""

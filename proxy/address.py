@@ -58,3 +58,22 @@ def normalize_host(host_string, default_port):
             pass   # an ordinary domain name, leave it alone
 
     return host, port
+
+# looks up every IP a host resolves to (a domain can have several, IPv4 and IPv6).
+# Raises OSError if the lookup fails.
+def resolve(host, port):
+    infos = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
+    ips = [info[4][0] for info in infos]   # info[4] is the (ip, port, ...) address
+    return list(dict.fromkeys(ips))         # drop duplicates, keep the order
+
+# connects to the first of these IPs that answers. These are the SAME addresses the
+# rules already checked -- calling create_connection with the hostname instead would
+# do a second DNS lookup, which could return a different, unchecked address
+def connect_to(ips, port, timeout=10):
+    last_error = OSError("no addresses to connect to")
+    for ip in ips:
+        try:
+            return socket.create_connection((ip, port), timeout=timeout)
+        except OSError as e:
+            last_error = e
+    raise last_error

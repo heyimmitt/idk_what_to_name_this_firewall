@@ -1,13 +1,14 @@
 import select
-import socket
+
+from proxy.address import connect_to
 
 # blind tunnel for HTTPS: relays raw (encrypted) bytes between the client and the
 # destination in both directions without being able to read them
-def tunnel(client_socket, host, port):
+def tunnel(client_socket, ips, port):
     try:
-        dest_socket = socket.create_connection((host, port), timeout=10)
+        dest_socket = connect_to(ips, port)   # the already-checked IPs, not the name
     except OSError as e:
-        body = f"502 Bad Gateway: could not reach {host}:{port} ({e})\n".encode()
+        body = f"502 Bad Gateway: could not reach port {port} ({e})\n".encode()
         client_socket.sendall(
             b"HTTP/1.1 502 Bad Gateway\r\n"
             b"Content-Length: " + str(len(body)).encode() + b"\r\n"

@@ -1,3 +1,4 @@
+import ipaddress
 import json
 import os
 
@@ -11,6 +12,12 @@ with open(os.path.join(RULES_DIR, "blocklist.json")) as f:
 BLOCKED_IPS = set(rules["blocked_ips"])
 BLOCKED_DOMAINS = set(d.lower() for d in rules["blocked_domains"])
 ALLOWED_PORTS = set(rules["allowed_ports"])   # allowlist: any other destination port is denied
+
+# ip_network accepts a single IP ("6.6.6.6") or a whole range ("10.0.0.0/8")
+BLOCKED_DEST_NETWORKS = [ipaddress.ip_network(n) for n in rules["blocked_destination_ips"]]
+# internal addresses are blocked by default; list any you DO want reachable here
+# (e.g. the destination PC in the lab, which sits on a private LAN address)
+ALLOWED_INTERNAL_NETWORKS = [ipaddress.ip_network(n) for n in rules["allowed_internal_destinations"]]
 
 # hosts files also list local names we must never block
 IGNORED_NAMES = {"localhost", "localhost.localdomain", "local", "broadcasthost", "0.0.0.0"}
@@ -46,3 +53,21 @@ def check_rules(client_ip, dest_host, dest_port):
         return "BLOCK", f"domain {dest_host} is blocklisted"
 
     return "ALLOW", "no matching rule"
+
+# second rule pass, run on the IPs the destination actually resolved to. Blocks if
+# ANY of them is bad, since connect_to may end up using any of them
+def check_destination_ips(ips):
+    for ip_string in ips:
+        ip = ipaddress.ip_address(ip_string)
+
+        if any(ip in net for net in BLOCKED_DEST_NETWORKS):
+            return "BLOCK", f"destination IP {ip} is blocklisted"
+
+        # not is_global = loopback (127.x, ::1), private LAN (10.x, 192.168.x...),
+        # link-local (169.254.x), 0.0.0.0, etc. -- stops the proxy being used to reach
+        # itself or machines inside the network (SSRF)
+        is_internal = not ip.is_global or ip.is_multicast
+        if is_internal and not any(ip in net for net in ALLOWED_INTERNAL_NETWORKS):
+            return "BLOCK", f"destination IP {ip} is an internal address"
+
+    return "ALLOW", "destination IPs ok"

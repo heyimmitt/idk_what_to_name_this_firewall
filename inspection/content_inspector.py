@@ -1,6 +1,6 @@
+import ipaddress
 import json
 import os
-import re
 from urllib.parse import unquote
 
 PATTERNS_PATH = os.path.join(os.path.dirname(__file__), "patterns.json")
@@ -18,7 +18,14 @@ MAX_HYPHENS = patterns["max_hyphens"]
 
 SCORE_THRESHOLD = 3   # score >= this -> BLOCK
 
-IP_LITERAL_RE = re.compile(r"^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$")
+# domain is already normalized (proxy/address.py), so any IP spelling has become a
+# standard IPv4/IPv6 string by now -- ipaddress recognises both
+def is_ip_literal(domain):
+    try:
+        ipaddress.ip_address(domain)
+        return True
+    except ValueError:
+        return False
 
 # inspects an already-parsed request (domain + path + body), returns (score, [reasons])
 def inspect_request(domain, path, body=""):
@@ -31,7 +38,7 @@ def inspect_request(domain, path, body=""):
 
     # 1. destination is a raw IP address instead of a domain name — a classic way
     #    to dodge domain blocklists, and unusual for a legitimate everyday site
-    if IP_LITERAL_RE.match(domain):
+    if is_ip_literal(domain):
         score += 3
         reasons.append(f"destination is an IP-literal URL ({domain}), not a domain name")
 

@@ -4,10 +4,10 @@ import traceback
 
 from config import HOST, PORT
 from proxy.http_parser import parse_request
-from proxy.address import normalize_host
+from proxy.address import normalize_host, resolve
 from proxy.forwarder import forward_request
 from proxy.connect_handler import tunnel
-from rules.stateless_rules import check_rules
+from rules.stateless_rules import check_rules, check_destination_ips
 from inspection.content_inspector import check_content
 from state.connection_tracker import register_connection, release_connection, cleanup_loop
 
@@ -77,16 +77,28 @@ def handle_allowed_client(client_socket, client_addr):
         verdict, reason = check_rules(client_addr[0], dest_host, dest_port)
         print(f"Verdict: {verdict} ({reason})")
 
-        if verdict == "ALLOW" and method == "CONNECT":
-            tunnel(client_socket, dest_host, dest_port)   # same host:port the rules checked
-            client_socket.close()
-            return
+        # a name isn't what we connect to, its IPs are -- so resolve once, check
+        # those IPs, and later connect to exactly these (never re-resolve)
+        if verdict == "ALLOW":
+            dest_ips = resolve(dest_host, dest_port)   # DNS failure -> OSError -> 502 below
+            verdict, reason = check_destination_ips(dest_ips)
+            print(f"Destination IPs {dest_ips}: {verdict} ({reason})")
 
         if verdict == "ALLOW":
-            verdict, reason = check_content(dest_host, path, req_body)
+            # HTTPS path/body are encrypted, so CONNECT only gets the domain-based
+            # heuristics (IP literal, shortener, lookalike, TLD...)
+            if method == "CONNECT":
+                verdict, reason = check_content(dest_host, "", "")
+            else:
+                verdict, reason = check_content(dest_host, path, req_body)
             print(f"Content inspection: {verdict} ({reason})")
             if verdict == "BLOCK":
                 print(f"ALERT: suspicious request from {client_addr[0]} - {reason}")
+
+        if verdict == "ALLOW" and method == "CONNECT":
+            tunnel(client_socket, dest_ips, dest_port)   # the IPs we just checked
+            client_socket.close()
+            return
 
         if verdict == "BLOCK":
             body = f"403 Forbidden: {reason}\n".encode()
@@ -96,15 +108,14 @@ def handle_allowed_client(client_socket, client_addr):
                 b"\r\n" + body
             )
         else:
-            try:
-                response = forward_request(dest_host, dest_port, data)
-            except OSError as e:  # DNS failure, timeout, connection refused...
-                body = f"502 Bad Gateway: could not reach destination ({e})\n".encode()
-                response = (
-                    b"HTTP/1.1 502 Bad Gateway\r\n"
-                    b"Content-Length: " + str(len(body)).encode() + b"\r\n"
-                    b"\r\n" + body
-                )
+            response = forward_request(dest_ips, dest_port, data)
+    except OSError as e:  # DNS failure, timeout, connection refused...
+        body = f"502 Bad Gateway: could not reach destination ({e})\n".encode()
+        response = (
+            b"HTTP/1.1 502 Bad Gateway\r\n"
+            b"Content-Length: " + str(len(body)).encode() + b"\r\n"
+            b"\r\n" + body
+        )
     except Exception:
         traceback.print_exc()   # prints the real error + line number to the server terminal
         body = b"500 Internal Server Error\n"
