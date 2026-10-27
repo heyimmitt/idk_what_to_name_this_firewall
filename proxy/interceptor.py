@@ -4,6 +4,7 @@ import traceback
 
 from config import HOST, PORT
 from proxy.http_parser import parse_request
+from proxy.request_reader import read_request, RequestError
 from proxy.address import normalize_host, resolve
 from proxy.forwarder import forward_request
 from proxy.connect_handler import tunnel
@@ -33,8 +34,23 @@ def handle_client(client_socket, client_addr):
         release_connection(client_ip)   # always runs, so the count never leaks
 
 def handle_allowed_client(client_socket, client_addr):
-    data = client_socket.recv(4096) # reads upto 4096 bytes from the client socket
-    if not data:   # browsers open speculative connections that never send anything
+    # read ONE complete request (all headers + the full body), within a time limit
+    try:
+        data = read_request(client_socket)
+    except RequestError as e:   # too slow, too big, malformed, unsupported...
+        print(f"Bad request: {e.status} ({e})")
+        body = f"{e.status}: {e}\n".encode()
+        client_socket.sendall(
+            b"HTTP/1.1 " + e.status.encode() + b"\r\n"
+            b"Content-Length: " + str(len(body)).encode() + b"\r\n"
+            b"\r\n" + body
+        )
+        client_socket.close()
+        return
+    except OSError:   # client reset the connection while we were reading
+        client_socket.close()
+        return
+    if data is None:   # browsers open speculative connections that never send anything
         client_socket.close()
         return
 
