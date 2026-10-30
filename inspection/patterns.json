@@ -3,12 +3,32 @@
     "bit.ly", "tinyurl.com", "t.co", "goo.gl", "ow.ly", "is.gd", "buff.ly", "rebrand.ly",
     "cutt.ly", "shorturl.at", "tiny.cc", "rb.gy", "shorte.st", "soo.gd"
   ],
-  "phishing_keywords": [
-    "verify-account", "verify-your-account", "login-secure", "secure-login",
-    "update-payment", "update-billing", "confirm-identity", "account-suspended",
-    "account-locked", "urgent-action", "reset-password-now", "claim-your-prize",
-    "free-gift-card", "you-have-won", "confirm-your-details", "unusual-activity",
-    "click-here-now", "limited-time-offer", "act-now", "wire-transfer-request"
+  "phishing_actions": [
+    "verify", "verified", "verification", "confirm", "confirmed", "confirmation",
+    "update", "updated", "validate", "validation", "unlock", "unlocked", "restore",
+    "reactivate", "suspend", "suspended", "suspension", "locked", "disabled",
+    "expired", "recover", "recovery"
+  ],
+  "phishing_targets": [
+    "account", "accounts", "identity", "password", "passwords", "billing", "payment",
+    "card", "details", "information", "credentials", "login", "signin", "ssn",
+    "bank", "wallet"
+  ],
+  "phishing_window": 3,
+  "phishing_phrases": [
+    "urgent action", "reset password now", "claim your prize", "free gift card",
+    "you have won", "unusual activity", "click here now", "limited time offer",
+    "act now", "wire transfer request", "secure login", "login secure"
+  ],
+  "attack_signatures": [
+    {"name": "path traversal", "pattern": "\\.\\.[/\\\\]"},
+    {"name": "sensitive file access", "pattern": "/etc/(passwd|shadow)\\b|\\bwin\\.ini\\b"},
+    {"name": "SQL injection", "pattern": "'\\s*or\\s*'?\\d+'?\\s*=\\s*'?\\d+"},
+    {"name": "SQL injection", "pattern": "\\bunion\\s+(all\\s+)?select\\b"},
+    {"name": "SQL injection", "pattern": ";\\s*drop\\s+table\\b"},
+    {"name": "cross-site scripting", "pattern": "<\\s*script\\b"},
+    {"name": "cross-site scripting", "pattern": "<[^<>]{0,200}\\bon[a-z]+\\s*="},
+    {"name": "cross-site scripting", "pattern": "=\\s*['\"]?\\s*javascript\\s*:"}
   ],
   "suspicious_extensions": [".exe", ".scr", ".bat", ".vbs", ".jar", ".msi", ".cmd"],
   "brand_names": [

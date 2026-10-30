@@ -12,7 +12,7 @@ with open(PATTERNS_PATH) as f:
 # --- normalization: get text into ONE standard form before matching anything ---
 
 MAX_DECODE_ROUNDS = 5
-SEPARATORS_RE = re.compile(r"[\s\-_./+]+")   # any run of these counts as one separator
+WORD_RE = re.compile(r"[^\W_]+")   # runs of letters/digits; everything else separates words
 
 # the real text the server will end up seeing
 def decode_fully(text):
@@ -26,14 +26,21 @@ def decode_fully(text):
     # NFKC turns unicode lookalikes into plain characters ("ｖｅｒｉｆｙ" -> "verify")
     return unicodedata.normalize("NFKC", text).lower()
 
-# decoded text with every run of separators squashed to a single "-", so
-# "verify_account", "verify account", "verify.account" all become "verify-account"
-def flatten(text):
-    return SEPARATORS_RE.sub("-", text)
+# decoded text split into words, so "verify_account", "verify account",
+# "verify.account", "action=verify&what=account" all give [..."verify", "account"]
+def to_words(text):
+    return WORD_RE.findall(text)
 
 URL_SHORTENERS = set(patterns["url_shorteners"])
-# flattened the same way as the traffic, so the two always compare like-for-like
-PHISHING_KEYWORDS = [flatten(decode_fully(k)) for k in patterns["phishing_keywords"]]
+# phrases are processed exactly like the traffic, so the two compare like-for-like
+PHISHING_ACTIONS = set(patterns["phishing_actions"])
+PHISHING_TARGETS = set(patterns["phishing_targets"])
+PHISHING_WINDOW = patterns["phishing_window"]
+PHISHING_PHRASES = [" ".join(to_words(decode_fully(p))) for p in patterns["phishing_phrases"]]
+# compiled once at startup; IGNORECASE so rule authors don't have to think about case
+ATTACK_SIGNATURES = [
+    (s["name"], re.compile(s["pattern"], re.IGNORECASE)) for s in patterns["attack_signatures"]
+]
 SUSPICIOUS_EXTENSIONS = patterns["suspicious_extensions"]
 BRAND_NAMES = patterns["brand_names"]
 SUSPICIOUS_DOMAIN_WORDS = patterns["suspicious_domain_words"]
@@ -63,6 +70,34 @@ def find_brand(words):
             return brand
     return None
 
+# finds an action word ("verify") within PHISHING_WINDOW words of a target word
+# ("account"), in either order -- two short word lists cover hundreds of phrasings
+# ("verify your account", "your account has been suspended", "confirm billing")
+def find_phishing_combo(words):
+    for i, word in enumerate(words):
+        if word in PHISHING_ACTIONS:
+            nearby = words[max(0, i - PHISHING_WINDOW): i + PHISHING_WINDOW + 1]
+            target = next((w for w in nearby if w in PHISHING_TARGETS), None)
+            if target:
+                return word, target
+    return None
+
+# scam phrases that aren't an action+target pair ("claim your prize"). Matched as
+# whole-word sequences: the spaces around both sides stop "act now" matching
+# inside "contact nowhere"
+def find_phishing_phrases(words):
+    text = " " + " ".join(words) + " "
+    return [p for p in PHISHING_PHRASES if " " + p + " " in text]
+
+# names of the attack signatures this text matches, each name listed once (several
+# SQL injection regexes matching still counts as one "SQL injection")
+def find_attack_signatures(text):
+    found = []
+    for name, regex in ATTACK_SIGNATURES:
+        if name not in found and regex.search(text):
+            found.append(name)
+    return found
+
 # domain is already normalized (proxy/address.py), so any IP spelling has become a
 # standard IPv4/IPv6 string by now -- ipaddress recognises both
 def is_ip_literal(domain):
@@ -77,11 +112,11 @@ def inspect_request(domain, path, body=""):
     score = 0
     reasons = []
     # two views of each: "decoded" keeps real "." and "/" (for file extensions and
-    # attack signatures), "flat" squashes separators (for keyword matching)
+    # attack signatures), "words" is just the words (for phishing wording)
     path_decoded = decode_fully(path)
     body_decoded = decode_fully(body)
-    path_flat = flatten(path_decoded)
-    body_flat = flatten(body_decoded)
+    path_words = to_words(path_decoded)
+    body_words = to_words(body_decoded)
     # path without the "?query" part, so "/setup.exe?x=1" still ends in ".exe"
     path_only = path_decoded.split("?", 1)[0]
 
@@ -122,24 +157,31 @@ def inspect_request(domain, path, body=""):
         score += 1
         reasons.append(f"domain '{domain}' uses a commonly-abused TLD")
 
-    # 3. phishing-style keyword combos in the path/query
-    for keyword in PHISHING_KEYWORDS:
-        if keyword in path_flat:
+    # 3. phishing-style wording, in the path/query AND the request body (e.g. a
+    # submitted form) -- the body is actual payload content, which is what
+    # "content inspection" means
+    for where, words in (("path", path_words), ("request body", body_words)):
+        combo = find_phishing_combo(words)
+        if combo:
             score += 3
-            reasons.append(f"path contains phishing-like keyword '{keyword}'")
-
-    # 3b. same keywords, but in the request BODY (e.g. a submitted form) — this is
-    # actual payload content, not just the URL, which is what "content inspection" means
-    for keyword in PHISHING_KEYWORDS:
-        if keyword in body_flat:
+            reasons.append(f"{where} pairs '{combo[0]}' with '{combo[1]}' (phishing-style wording)")
+        for phrase in find_phishing_phrases(words):
             score += 3
-            reasons.append(f"request body contains phishing-like keyword '{keyword}'")
+            reasons.append(f"{where} contains scam phrase '{phrase}'")
 
     # 4. suspicious file extension being requested
     for ext in SUSPICIOUS_EXTENSIONS:
         if path_only.endswith(ext):
             score += 3
             reasons.append(f"path requests a suspicious file type ({ext})")
+
+    # 5. known attack signatures (path traversal, SQL injection, XSS) -- attacks on
+    # the SERVER rather than the user. Run on the decoded text, so "%2e%2e%2f" and
+    # "union+select" are caught by plain "../" and "union select" patterns
+    for where, text in (("path", path_decoded), ("request body", body_decoded)):
+        for name in find_attack_signatures(text):
+            score += 3
+            reasons.append(f"{where} matches attack signature: {name}")
 
     return score, reasons
 
