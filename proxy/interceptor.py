@@ -93,13 +93,9 @@ def handle_allowed_client(client_socket, client_addr):
         verdict, reason = check_rules(client_addr[0], dest_host, dest_port)
         print(f"Verdict: {verdict} ({reason})")
 
-        # a name isn't what we connect to, its IPs are -- so resolve once, check
-        # those IPs, and later connect to exactly these (never re-resolve)
-        if verdict == "ALLOW":
-            dest_ips = resolve(dest_host, dest_port)   # DNS failure -> OSError -> 502 below
-            verdict, reason = check_destination_ips(dest_ips)
-            print(f"Destination IPs {dest_ips}: {verdict} ({reason})")
-
+        # content heuristics only need the name/path/body, not the network -- so they
+        # run BEFORE the DNS lookup: cheap checks first, and a phishing domain gets a
+        # proper 403 + reason even if it doesn't resolve
         if verdict == "ALLOW":
             # HTTPS path/body are encrypted, so CONNECT only gets the domain-based
             # heuristics (IP literal, shortener, lookalike, TLD...)
@@ -110,6 +106,13 @@ def handle_allowed_client(client_socket, client_addr):
             print(f"Content inspection: {verdict} ({reason})")
             if verdict == "BLOCK":
                 print(f"ALERT: suspicious request from {client_addr[0]} - {reason}")
+
+        # a name isn't what we connect to, its IPs are -- so resolve once, check
+        # those IPs, and later connect to exactly these (never re-resolve)
+        if verdict == "ALLOW":
+            dest_ips = resolve(dest_host, dest_port)   # DNS failure -> OSError -> 502 below
+            verdict, reason = check_destination_ips(dest_ips)
+            print(f"Destination IPs {dest_ips}: {verdict} ({reason})")
 
         if verdict == "ALLOW" and method == "CONNECT":
             tunnel(client_socket, dest_ips, dest_port)   # the IPs we just checked

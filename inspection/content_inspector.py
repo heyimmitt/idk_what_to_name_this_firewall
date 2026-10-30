@@ -43,6 +43,11 @@ MAX_HYPHENS = patterns["max_hyphens"]
 
 SCORE_THRESHOLD = 3   # score >= this -> BLOCK
 
+# true if domain is one of these, or a subdomain of one ("www.bit.ly" -> "bit.ly").
+# the "." matters: "notbit.ly" must NOT count as a subdomain of "bit.ly"
+def matches_domain(domain, domain_set):
+    return any(domain == d or domain.endswith("." + d) for d in domain_set)
+
 DOMAIN_WORD_SPLIT_RE = re.compile(r"[.\-]+")
 
 # "paypal.com.secure-login.net" -> ["paypal", "com", "secure", "login", "net"]
@@ -87,7 +92,7 @@ def inspect_request(domain, path, body=""):
         reasons.append(f"destination is an IP-literal URL ({domain}), not a domain name")
 
     # 2. known URL-shortener domain — hides the real destination behind a redirect
-    if domain in URL_SHORTENERS:
+    if matches_domain(domain, URL_SHORTENERS):
         score += 3
         reasons.append(f"{domain} is a known URL shortener")
 
@@ -95,10 +100,7 @@ def inspect_request(domain, path, body=""):
     # word (e.g. "paypal-secure-login.net"), but isn't actually that brand's real
     # domain (or a subdomain of it) — catches lookalikes we've never seen before,
     # instead of needing every fake domain listed individually
-    is_real_brand_domain = domain in REAL_BRAND_DOMAINS or any(
-        domain.endswith("." + real) for real in REAL_BRAND_DOMAINS
-    )
-    if not is_real_brand_domain:
+    if not matches_domain(domain, REAL_BRAND_DOMAINS):
         mentioned_brand = find_brand(domain_words(domain))
         mentioned_word = next((w for w in SUSPICIOUS_DOMAIN_WORDS if w in domain), None)
         if mentioned_brand and mentioned_word:
