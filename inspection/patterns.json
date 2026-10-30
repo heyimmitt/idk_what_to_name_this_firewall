@@ -19,7 +19,8 @@
   "real_brand_domains": [
     "paypal.com", "amazon.com", "apple.com", "microsoft.com", "netflix.com",
     "facebook.com", "instagram.com", "google.com", "chase.com", "wellsfargo.com",
-    "bankofamerica.com", "irs.gov", "usps.com", "fedex.com"
+    "bankofamerica.com", "irs.gov", "usps.com", "fedex.com",
+    "microsoftonline.com", "live.com"
   ],
   "suspicious_tlds": [".xyz", ".top", ".click", ".loan", ".win", ".gq", ".tk", ".rest"],
   "max_hyphens": 3

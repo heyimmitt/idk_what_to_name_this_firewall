@@ -43,6 +43,21 @@ MAX_HYPHENS = patterns["max_hyphens"]
 
 SCORE_THRESHOLD = 3   # score >= this -> BLOCK
 
+DOMAIN_WORD_SPLIT_RE = re.compile(r"[.\-]+")
+
+# "paypal.com.secure-login.net" -> ["paypal", "com", "secure", "login", "net"]
+def domain_words(domain):
+    return [w for w in DOMAIN_WORD_SPLIT_RE.split(domain) if w]
+
+# a brand counts if a domain word IS it ("paypal-login") or STARTS with it
+# ("paypallogin") -- but not in the middle/end of a word, so "purchase" doesn't
+# count as mentioning "chase", and "first" doesn't count as mentioning "irs"
+def find_brand(words):
+    for brand in BRAND_NAMES:
+        if any(word.startswith(brand) for word in words):
+            return brand
+    return None
+
 # domain is already normalized (proxy/address.py), so any IP spelling has become a
 # standard IPv4/IPv6 string by now -- ipaddress recognises both
 def is_ip_literal(domain):
@@ -84,7 +99,7 @@ def inspect_request(domain, path, body=""):
         domain.endswith("." + real) for real in REAL_BRAND_DOMAINS
     )
     if not is_real_brand_domain:
-        mentioned_brand = next((b for b in BRAND_NAMES if b in domain), None)
+        mentioned_brand = find_brand(domain_words(domain))
         mentioned_word = next((w for w in SUSPICIOUS_DOMAIN_WORDS if w in domain), None)
         if mentioned_brand and mentioned_word:
             score += 3
