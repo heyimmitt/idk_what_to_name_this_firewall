@@ -3,5 +3,7 @@ config.py
 *.md
 !README.md
 
+logs/
+
 __pycache__/
 *.pyc
