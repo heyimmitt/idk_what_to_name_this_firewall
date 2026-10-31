@@ -1,7 +1,6 @@
-config.py
-
 *.md
 !README.md
+!TESTS.md
 
 logs/
 
