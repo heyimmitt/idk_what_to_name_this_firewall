@@ -6,7 +6,7 @@ from audit.logger import logger, setup_logging, log_decision
 from proxy.http_parser import parse_request
 from proxy.request_reader import read_request, RequestError
 from proxy.address import normalize_host, resolve
-from proxy.forwarder import forward_request
+from proxy.forwarder import build_upstream_request, forward_request
 from proxy.connect_handler import tunnel
 from rules.stateless_rules import check_rules, check_destination_ips
 from inspection.content_inspector import check_content
@@ -127,7 +127,8 @@ def handle_allowed_client(client_socket, client_addr):
                 b"\r\n" + body
             )
         else:
-            response = forward_request(dest_ips, dest_port, data)
+            upstream_request = build_upstream_request(data, method, path, version, dest_host, dest_port)
+            response = forward_request(dest_ips, dest_port, upstream_request)
             status_line = response.split(b"\r\n", 1)[0].decode(errors="replace")   # "HTTP/1.1 200 OK"
             stage, reason = "passed", f"forwarded to {dest_ips[0]}, destination replied '{status_line}'"
     except OSError as e:  # DNS failure, timeout, connection refused...
